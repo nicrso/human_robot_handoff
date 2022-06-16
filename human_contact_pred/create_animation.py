@@ -133,7 +133,7 @@ if __name__ == '__main__':
       geom.colors = open3d.utility.Vector3dVector(tex_pred)
 
       images = animate(geom, save=True)
-
+      print(images)
       grid = make_grid(images)
 
       grid_filename = osp.join('animation_images',
