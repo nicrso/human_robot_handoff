@@ -1,5 +1,0 @@
-diverse_beta: 1
-droprate: 0.2
-in_channels: 5
-n_ensemble: 10
-out_channels: 2

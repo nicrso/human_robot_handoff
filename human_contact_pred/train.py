@@ -1,4 +1,5 @@
 
+from asyncio.log import logger
 import os 
 import configparser
 import argparse
@@ -8,6 +9,7 @@ from torch import embedding, nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import pytorch_lightning as pl
+from pytorch_lightning.loggers import TensorBoardLogger
 
 from voxel_dataset import VoxelDataset
 from model import DiverseVoxNet, VoxNet
@@ -99,7 +101,8 @@ def train(
     )
 
     #Lightning training
-    trainer = pl.Trainer(accelerator="gpu", devices=1)
+    logger = TensorBoardLogger("tb_logs", name="voxnet")
+    trainer = pl.Trainer(accelerator="gpu", devices=1, logger=logger)
 
     if resume:
         trainer.fit(

@@ -9,6 +9,13 @@ from losses import DiverseLoss
 import pytorch_lightning as pl
 from pytorch_lightning.utilities.model_summary import ModelSummary
 
+import open3d as o3d
+from open3d.visualization.tensorboard_plugin import summary
+from open3d.visualization.tensorboard_plugin.util import to_dict_batch
+from torch.utils.tensorboard import SummaryWriter
+import torchvision
+
+
 class VoxNet(pl.LightningModule):
     """
     3D CNN as described in "VoxNet: A 3D Convolutional Neural Network for Real-Time Object
@@ -200,12 +207,24 @@ class DiverseVoxNet(pl.LightningModule):
         """
 
         geom, tex_targs = batch 
+        print("GEOM", geom.shape)
         tex_preds = self(geom)
 
-        loss, _ = self.train_loss_fn(tex_preds, tex_targs)
-        self.log("train_loss", loss)
+        train_loss, _ = self.train_loss_fn(tex_preds, tex_targs)
 
-        return loss
+        self.log("train_loss", train_loss)
+        #self.log("performance", {"accuracy": acc, "loss": loss})
+
+        return train_loss
+
+    # def training_epoch_end(self, outputs):
+
+    #     # if(self.current_epoch==1):
+    #     #     sampleInput=torch.rand(())
+
+    #     avg_loss = torch.stack([x['loss'] for x in outputs]).mean()
+
+    #     #log avg loss
     
     def validation_step(
         self, 
@@ -220,16 +239,30 @@ class DiverseVoxNet(pl.LightningModule):
         :return: The validation loss
         """
 
+        #To-do: log accuracy, log multiple images of prediction, confusion matrix
+
+
         geom, tex_targs = batch 
         tex_preds = self(geom)
+        print("SHAPE", tex_preds.shape)
 
-        loss, _ = self.val_loss_fn(tex_preds, tex_targs)
+        #tex_preds.shape: 1, 10, 2, 64, 64, 64
 
-        #values = {"val_loss": loss, "input_shape": geom, "texture_targets": tex_targs, "texture_preds": tex_preds}
-        #self.log_dict(values)
-        self.log(loss)
+        val_loss, _ = self.val_loss_fn(tex_preds, tex_targs)
 
-        return loss
+        self.log("val_loss", val_loss)
+        
+        #generate a series of images from predictions
+        #returns images
+        return val_loss, tex_preds, geom
+
+    def validation_epoch_end(self, outputs) -> None:
+        #generate a series of images from predictions 
+        #add the images to the logger 
+        idxs = [0]
+        img_batch = preds_to_images(outputs[1], idxs)
+        grid = torchvision.utils.make_grid(img_batch)
+        self.logger.experiment.add_image("Prediction", grid, self.current_epoch)
 
     # def test_step(
     #     self, 
