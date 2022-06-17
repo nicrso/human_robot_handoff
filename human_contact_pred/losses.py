@@ -45,7 +45,6 @@ def classification_error(preds: torch.Tensor, targs: torch.Tensor) -> torch.Tens
     errors = torch.stack(errors)
     return errors
 
-
 class DiverseLoss(nn.Module):
     def __init__(self, pos_weight: int = 10, beta=1, is_train=True, eval_mode=False):
         """
@@ -90,3 +89,4 @@ class DiverseLoss(nn.Module):
         match_indices = torch.stack(match_indices)
         
         return loss, match_indices
+

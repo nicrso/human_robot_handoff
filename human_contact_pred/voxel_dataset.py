@@ -1,6 +1,6 @@
 import utils
 from collections import OrderedDict
-from model import DiverseVoxNet as VoxNet
+from human_contact_pred.diversenet_model import DiverseVoxNet as VoxNet
 from losses import DiverseLoss
 import torch.utils.data as tdata
 import os

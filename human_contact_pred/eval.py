@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 import pytorch_lightning as pl
 
 from voxel_dataset import VoxelDataset
-from model import DiverseVoxNet, VoxNet
+from human_contact_pred.diversenet_model import DiverseVoxNet, VoxNet
 
 osp = os.path
 

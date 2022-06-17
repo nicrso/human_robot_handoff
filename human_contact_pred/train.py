@@ -1,5 +1,6 @@
 
 from asyncio.log import logger
+from gc import callbacks
 import os 
 import configparser
 import argparse
@@ -10,9 +11,10 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.callbacks import ModelCheckpoint
 
 from voxel_dataset import VoxelDataset
-from model import DiverseVoxNet, VoxNet
+from human_contact_pred.diversenet_model import DiverseVoxNet, VoxNet
 
 osp = os.path
 
@@ -100,9 +102,14 @@ def train(
         droprate=droprate
     )
 
+    #checkpointing
+    #checkpoint_callback = ModelCheckpoint(save_top_k=3, monitor="val_loss", mode="min", filename="{epoch}-{val_loss:.2f}")
+
+
     #Lightning training
-    logger = TensorBoardLogger("tb_logs", name="voxnet")
-    trainer = pl.Trainer(accelerator="gpu", devices=1, logger=logger)
+    #logger = TensorBoardLogger("tb_logs", name="voxnet")
+    #trainer = pl.Trainer(devices=1, accelerator="gpu", callbacks=[checkpoint_callback])
+    trainer = pl.Trainer(accelerator="gpu", devices=1)
 
     if resume:
         trainer.fit(
