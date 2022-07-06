@@ -1,13 +1,20 @@
-import os 
+from ast import Div
+import os
+import numpy 
 import torch 
 from torch import nn
 import torch.nn.functional as F
 from typing import Tuple, List
 
-from losses import DiverseLoss
+from losses import DiverseLoss, TextureLoss
+from visualize import save_preds
 
 import pytorch_lightning as pl
 from pytorch_lightning.utilities.model_summary import ModelSummary
+import torchvision
+
+#alter model to handle the format of the dataloader 
+#dataloader items will be np arrays with one item 
 
 class cnn3d(pl.LightningModule):
     """
@@ -22,13 +29,15 @@ class cnn3d(pl.LightningModule):
     ) -> None:
         """
         3D CNN PyTorch Lightning module. 
-        :param n_ensemble: Number of models to train 
-        :param inplanes: Number of input features
-        :param outplanes: Number of output features (classes)
-        :param droprate: Probability of dropping a prediction
+        :param in channels: Number of input features
+        :param out channels: Number of output features (classes)
         """
 
         super().__init__()
+
+        #initialize losses 
+        self.train_loss_fn = DiverseLoss()
+        self.val_loss_fn = DiverseLoss(is_train=False)
 
         nc = in_channels
 
@@ -95,16 +104,13 @@ class cnn3d(pl.LightningModule):
             nn.BatchNorm3d(out_channels),
         )
 
-    def forward(self, x: torch.Tensor, c) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward defines prediction/inference actions.
         :param x: Input tensor 
         :param c:
         :return: Model output tensor
         """
-        #lightning: forward defines prediction/inference actions
-        if self.droprate > 0:
-            x = self.drop(x)
 
         #Encoding pass
         x = self.down1(x)
@@ -135,6 +141,15 @@ class cnn3d(pl.LightningModule):
         geom, tex_targs = batch 
         tex_preds = self(geom)
 
+        tex_preds = torch.unsqueeze(tex_preds, dim=0)
+
+        # print("Preds", tex_preds.shape) #torch.Size([1, 2, 64, 64, 64])
+        # print("Targs", tex_targs.shape) #torch.Size([1, 1, 64, 64, 64])
+
+        #expand 
+        #Expected target size [1, 64, 64, 64], got [1, 1, 64, 64, 64]
+
+
         loss, _ = self.train_loss_fn(tex_preds, tex_targs)
         self.log("train_loss", loss)
 
@@ -155,9 +170,41 @@ class cnn3d(pl.LightningModule):
         geom, tex_targs = batch 
         tex_preds = self(geom)
 
+        tex_preds = torch.unsqueeze(tex_preds, dim=0)
+
+        # print("Preds", tex_preds.shape)
+        # print("Targs", tex_targs.shape)
+
         loss, _ = self.val_loss_fn(tex_preds, tex_targs)
 
-        self.log(loss)
+        self.log("val_loss", loss)
+
+        plot_type = "pointcloud"
+
+        if self.current_epoch % 100 == 0:
+            im_name = "Epoch_" + str(self.current_epoch) + "_Step_" + str(self.global_step) + '_' + str(plot_type) + ".png"
+
+            print("Before", geom.shape, tex_preds.shape)
+            
+            if geom.shape[0] > 1:
+                geom = geom[0]
+            geom = geom.cpu().numpy().squeeze()
+ 
+            if tex_preds.shape[0] > 1:
+                tex_preds = tex_preds[0]
+                
+            tex_preds = tex_preds.cpu().numpy().squeeze()
+            tex_targs = tex_targs.cpu().numpy()
+            
+            trans = torchvision.transforms.ToTensor()
+
+            if geom[0].shape[0] == 5:
+                geom = geom[0]
+
+            print("After", geom.shape, tex_preds.shape)
+
+            #save_preds expects: geom.shape(5, 64, 64, 64), tex_preds.shape(X, 2, 64, 64, 64)
+            img = trans(save_preds(geom[0], tex_preds, im_name, plot_type, True))
 
         return loss
 

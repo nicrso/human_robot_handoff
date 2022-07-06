@@ -17,32 +17,6 @@ from torchvision.utils import make_grid
 from torchvision.transforms import ToTensor
 osp = os.path
 
-def preds_to_images(geom, preds, pred_idxs):
-  """
-  Converts model predictions to grid of images 
-  """
-
-  cmap = np.asarray([[0, 0, 1], [1, 0, 0]])
-
-  z, y, x = np.nonzero(geom[0])
-  pts = np.vstack((x, y, z)).T
-
-  imgs = []
-
-  for pred_idx in pred_idxs:
-    tex_pred = np.argmax(preds[pred_idx], axis=0)
-    tex_pred = tex_pred[z, y, x]
-    tex_pred = cmap[tex_pred]
-    pc = open3d.geometry.PointCloud()
-    pc.points = open3d.utility.Vector3dVector(pts)
-    pc.colors = open3d.utility.Vector3dVector(tex_pred)
-
-    #add images to stack 
-    animate(geom, pred_idx)
-    
-  #return numpy array of images
-  return 
-
 def animate(geom, n_images=42, save=True, suffix=None):
   """
   Visualizes n_images around an object from an inputted geometry with texture 
@@ -133,10 +107,10 @@ if __name__ == '__main__':
       geom.colors = open3d.utility.Vector3dVector(tex_pred)
 
       images = animate(geom, save=True)
-      print(images)
       grid = make_grid(images)
 
       grid_filename = osp.join('animation_images',
           'grid_{:03d}'.format(pred_idx))
       plt.imsave(grid_filename, np.asarray(grid))
       #open3d.draw_geometries([geom])
+

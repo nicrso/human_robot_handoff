@@ -1,4 +1,3 @@
-
 from asyncio.log import logger
 from gc import callbacks
 import os 
@@ -14,7 +13,8 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
 
 from voxel_dataset import VoxelDataset
-from human_contact_pred.diversenet_model import DiverseVoxNet, VoxNet
+from diversenet import DiverseVoxNet, VoxNet
+from cnn3d import cnn3d
 
 osp = os.path
 
@@ -23,6 +23,7 @@ def train(
     data_dir, 
     instruction, 
     config_file, 
+    model_type,
     checkpoint_file=None,
     experiment_suffix=None,
     include_sessions=None,
@@ -97,19 +98,29 @@ def train(
     )
 
     #Create model
-    voxnet = DiverseVoxNet(
+    diverse_voxnet = DiverseVoxNet(
         n_ensemble=n_ensemble,
         droprate=droprate
     )
 
+    single_voxnet = cnn3d()
+
+    if model_type == 'single':
+        voxnet = single_voxnet
+    elif model_type == 'diverse':
+        voxnet = diverse_voxnet
+
     #checkpointing
     #checkpoint_callback = ModelCheckpoint(save_top_k=3, monitor="val_loss", mode="min", filename="{epoch}-{val_loss:.2f}")
-
 
     #Lightning training
     #logger = TensorBoardLogger("tb_logs", name="voxnet")
     #trainer = pl.Trainer(devices=1, accelerator="gpu", callbacks=[checkpoint_callback])
-    trainer = pl.Trainer(accelerator="gpu", devices=1)
+    
+    trainer = pl.Trainer(accelerator="gpu", devices=1, log_every_n_steps=1)
+
+    #tune to find learning rate
+    trainer.tune(model=voxnet)
 
     if resume:
         trainer.fit(
@@ -131,6 +142,7 @@ if __name__ == '__main__':
         default=osp.join('data', 'voxelized_meshes'))
     parser.add_argument('--instruction', required=True)
     parser.add_argument('--config_file', required=True)
+    parser.add_argument('--model_type', required=True) #single or diverse
     parser.add_argument('--suffix', default=None)
     parser.add_argument("--checkpoint_file", default=None)
     parser.add_argument('--include_sessions', default=None)
@@ -143,6 +155,6 @@ if __name__ == '__main__':
     exclude_sessions = None
     if args.exclude_sessions is not None:
         exclude_sessions = args.exclude_sessions.split(',')
-    train(osp.expanduser(args.data_dir), args.instruction, args.config_file,
+    train(osp.expanduser(args.data_dir), args.instruction, args.config_file, args.model_type,
         experiment_suffix=args.suffix,checkpoint_file=args.checkpoint_file, include_sessions=include_sessions,
         exclude_sessions=exclude_sessions)

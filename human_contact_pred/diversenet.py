@@ -1,10 +1,11 @@
-import os 
+from matplotlib import image, transforms 
 import torch 
 from torch import nn
 import torch.nn.functional as F
 from typing import Tuple, List
 
 from losses import DiverseLoss
+from visualize import save_preds
 
 import pytorch_lightning as pl
 from pytorch_lightning.utilities.model_summary import ModelSummary
@@ -15,7 +16,6 @@ from open3d.visualization.tensorboard_plugin.util import to_dict_batch
 from torch.utils.tensorboard import SummaryWriter
 import torchvision
 
-
 class VoxNet(pl.LightningModule):
     """
     3D CNN as described in "VoxNet: A 3D Convolutional Neural Network for Real-Time Object
@@ -24,8 +24,8 @@ class VoxNet(pl.LightningModule):
 
     def __init__(
         self, 
-        n_ensemble: int, 
-        in_channels: int = 10,
+        n_ensemble: int = 10, 
+        in_channels: int = 5,
         out_channels: int = 2,
         droprate=0
     ) -> None:
@@ -207,24 +207,17 @@ class DiverseVoxNet(pl.LightningModule):
         """
 
         geom, tex_targs = batch 
-        print("GEOM", geom.shape)
         tex_preds = self(geom)
 
-        train_loss, _ = self.train_loss_fn(tex_preds, tex_targs)
+        # print("Train Preds", tex_preds.shape) #torch.Size([1, 10, 2, 64, 64, 64])   
+        # print("Train Targs", tex_targs.shape) #torch.Size([1, 1, 64, 64, 64])
 
-        self.log("train_loss", train_loss)
+        loss, _ = self.train_loss_fn(tex_preds, tex_targs)
+
+        self.log("train_loss", loss, on_step=True)
         #self.log("performance", {"accuracy": acc, "loss": loss})
 
-        return train_loss
-
-    # def training_epoch_end(self, outputs):
-
-    #     # if(self.current_epoch==1):
-    #     #     sampleInput=torch.rand(())
-
-    #     avg_loss = torch.stack([x['loss'] for x in outputs]).mean()
-
-    #     #log avg loss
+        return loss
     
     def validation_step(
         self, 
@@ -241,52 +234,54 @@ class DiverseVoxNet(pl.LightningModule):
 
         #To-do: log accuracy, log multiple images of prediction, confusion matrix
 
+        geoms, tex_targs = batch 
+        tex_preds = self(geoms)
 
-        geom, tex_targs = batch 
-        tex_preds = self(geom)
-        print("SHAPE", tex_preds.shape)
+        # print("Preds", tex_preds.shape) #torch.Size([1, 10, 2, 64, 64, 64]) 
+        # print("Targs", tex_targs.shape) #torch.Size([1, 1, 64, 64, 64])
 
-        #tex_preds.shape: 1, 10, 2, 64, 64, 64
+        loss, _ = self.val_loss_fn(tex_preds, tex_targs)
 
-        val_loss, _ = self.val_loss_fn(tex_preds, tex_targs)
+        plot_type = "pointcloud"
 
-        self.log("val_loss", val_loss)
+        if self.current_epoch % 100 == 0:
+            im_name = "Epoch_" + str(self.current_epoch) + "_Step_" + str(self.global_step) + '_' + str(plot_type) + ".png"
+
+            # print("Before", geoms.shape, tex_preds.shape)
+
+            if geoms.shape[0] > 1:
+                geoms = geoms[0]
+            geoms = geoms.cpu().numpy().squeeze()
+
+            if tex_preds.shape[0] > 1:
+                tex_preds = tex_preds[0]
+
+            tex_preds = tex_preds.cpu().numpy().squeeze()
+            tex_targs = tex_targs.cpu().numpy()
+
+            # print("After", geoms.shape, tex_preds.shape)
+
+            #Many samples: 
+            # Before torch.Size([3, 5, 64, 64, 64]) torch.Size([3, 10, 2, 64, 64, 64])
+            # After (3, 5, 64, 64, 64) (3, 10, 2, 64, 64, 64)
+
+            #Few samples:
+            # Before torch.Size([1, 5, 64, 64, 64]) torch.Size([1, 10, 2, 64, 64, 64])
+            # After (5, 64, 64, 64) (10, 2, 64, 64, 64)
+
+            trans = torchvision.transforms.ToTensor()
+
+            img = trans(save_preds(geoms[0], tex_preds, im_name, plot_type, True))
+
+            #self.log(im_name, img)
+
+        self.log("val_loss", loss)
         
-        #generate a series of images from predictions
-        #returns images
-        return val_loss, tex_preds, geom
-
-    def validation_epoch_end(self, outputs) -> None:
-        #generate a series of images from predictions 
-        #add the images to the logger 
-        idxs = [0]
-        img_batch = preds_to_images(outputs[1], idxs)
-        grid = torchvision.utils.make_grid(img_batch)
-        self.logger.experiment.add_image("Prediction", grid, self.current_epoch)
-
-    # def test_step(
-    #     self, 
-    #     batch: Tuple[torch.Tensor, torch.Tensor], 
-    #     idx: int,
-    # ) -> float:
-    #     """
-    #     :param batch: The input and target test data
-    #     :param idx: Current batch index
-    #     """
-
-    #     geom, tex_targs = batch 
-    #     tex_preds = self(geom)
-
-    #     loss, _ = test_loss_fn(tex_preds, tex_targs)
-
-    #     self.log("test_loss", loss)
-
-    #def predict_step(self, batch, idx): Might be needed, else pl uses forward()
+        return loss
 
     def configure_optimizers(self) -> torch.optim.Optimizer:
         """
         Configures optimizers for the model.
-
         :return: Configured optimizers 
         """
 

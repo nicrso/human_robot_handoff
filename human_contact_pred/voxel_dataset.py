@@ -1,6 +1,6 @@
 import utils
 from collections import OrderedDict
-from human_contact_pred.diversenet_model import DiverseVoxNet as VoxNet
+from diversenet import DiverseVoxNet as VoxNet
 from losses import DiverseLoss
 import torch.utils.data as tdata
 import os
@@ -8,6 +8,12 @@ import os.path as osp
 import numpy as np
 import transforms3d.euler as txe
 
+#Notes:
+#Add properties for when n_ensemble = 1
+#Add more random rotations in the dataset 
+#Maybe Switch to pytorch lightning datasets
+
+test_objects = ['mug', 'pan', 'wine_glass']
 
 class VoxelDataset(tdata.Dataset):
   def __init__(self, data_dir, instruction, is_train,
@@ -43,10 +49,10 @@ class VoxelDataset(tdata.Dataset):
       object_name = '_'.join(filename.split('.')[0].split('_')[offset:-1])
       if not test_only:
         if is_train:
-          if object_name in utils.test_objects:
+          if object_name in test_objects:
             continue
         else:
-          if object_name not in utils.test_objects:
+          if object_name not in test_objects:
             continue
       filename = osp.join(data_dir, filename)
       if object_name not in self.filenames:
@@ -118,10 +124,11 @@ class VoxelDataset(tdata.Dataset):
 
 if __name__ == '__main__':
   n_ensemble = 1
-  N_show = 30
+  N_show = 1
   dset = VoxelDataset(osp.join('data', 'voxelized_meshes'), 'use',
-    is_train=True, random_rotation=180, n_ensemble=n_ensemble)
-  for idx in np.random.choice(len(dset), N_show):
+    is_train=False, random_rotation=180, n_ensemble=n_ensemble)
+  # for idx in np.random.choice(len(dset), N_show):
+  for idx in range(N_show):
     geom, tex = dset[idx]
     z, y, x = np.nonzero(geom[0])  # see which voxels are occupied
     c = tex[0, z, y, x]
@@ -129,4 +136,5 @@ if __name__ == '__main__':
     y3d = geom[2, z, y, x]
     z3d = geom[3, z, y, x]
     #utils.show_pointcloud(np.vstack((x3d, y3d, z3d)).T, c)
+
     utils.show_pointcloud(np.vstack((x, y, z)).T, c)

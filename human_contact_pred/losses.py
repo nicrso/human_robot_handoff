@@ -18,6 +18,12 @@ class TextureLoss(nn.Module):
             ignore_index=2, reduction='none')
 
     def forward(self, preds: torch.Tensor, targs: torch.Tensor) -> float:
+        
+        # print(preds.shape, targs.shape)
+
+        #diverse: torch.Size([10, 2, 262144]) torch.Size([10, 262144])
+        #single: torch.Size([1, 2, 64, 64, 64]) torch.Size([1, 1, 64, 64, 64])
+
         loss = self.loss(preds, targs)
         loss = torch.mean(loss, 1)
         return loss

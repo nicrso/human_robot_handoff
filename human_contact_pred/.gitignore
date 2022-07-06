@@ -1,0 +1,12 @@
+#ignore data folder 
+data/
+
+#ignore logs 
+lightning_logs/
+
+#ignore cache
+__pycache__/
+
+#ignore checkpoints
+.ipynb_checkpoints/
+
