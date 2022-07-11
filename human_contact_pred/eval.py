@@ -14,7 +14,6 @@ from Robotics.human_contact_pred.diversenet import DiverseVoxNet, VoxNet
 
 osp = os.path
 
-
 def eval(
     data_dir,
     instruction,

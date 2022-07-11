@@ -13,7 +13,7 @@ import transforms3d.euler as txe
 #Add more random rotations in the dataset 
 #Maybe Switch to pytorch lightning datasets
 
-test_objects = ['mug', 'pan', 'wine_glass']
+test_objects = ['mug', 'pan', 'wine_glass', 'headphones', 'scissors', 'torus_small']
 
 class VoxelDataset(tdata.Dataset):
   def __init__(self, data_dir, instruction, is_train,

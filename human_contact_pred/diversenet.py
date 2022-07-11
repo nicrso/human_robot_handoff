@@ -1,5 +1,7 @@
+from operator import pos
 from matplotlib import image, transforms 
 import torch 
+import numpy 
 from torch import nn
 import torch.nn.functional as F
 from typing import Tuple, List
@@ -15,6 +17,8 @@ from open3d.visualization.tensorboard_plugin import summary
 from open3d.visualization.tensorboard_plugin.util import to_dict_batch
 from torch.utils.tensorboard import SummaryWriter
 import torchvision
+
+from tensorboard.plugins.mesh import summary as mesh_summary 
 
 class VoxNet(pl.LightningModule):
     """
@@ -38,8 +42,8 @@ class VoxNet(pl.LightningModule):
         :param droprate: Probability of dropping a prediction
         """
 
-        super().__init__()
-        #self.save_hyperparameters()
+        super(VoxNet, self).__init__()
+
         self.droprate = droprate
         self.drop = nn.Dropout(p=droprate)
 
@@ -151,6 +155,11 @@ class DiverseVoxNet(pl.LightningModule):
         out_channels: int = 2, 
         droprate: int = 0,
         diverse_beta: int = 1,
+        learning_rate: float = 1e-3,
+        weight_decay: float = 5e-4, 
+        momentum: float = 0.9,
+        lr_gamma: float = 0.1, 
+        lr_step_size: int = 1000, 
     ) -> None: 
         """
         3D CNN DiverseNet PyTorch Lightning module. 
@@ -161,9 +170,7 @@ class DiverseVoxNet(pl.LightningModule):
         :param droprate: Probability of dropping a prediction
         :param diverse_beta: beta for loss
         """
-        super().__init__()
-
-        self.save_hyperparameters()
+        super(DiverseVoxNet, self).__init__()
 
         self.n_ensemble = n_ensemble
         self.voxnet = VoxNet(
@@ -174,6 +181,12 @@ class DiverseVoxNet(pl.LightningModule):
 
         self.train_loss_fn = DiverseLoss(beta=diverse_beta)
         self.val_loss_fn = DiverseLoss(beta=diverse_beta, is_train=False)
+
+        self.learning_rate = learning_rate
+        self.weight_decay = weight_decay	
+        self.momentum = momentum
+        self.lr_gamma = lr_gamma
+        self.lr_step_size = lr_step_size
 
     def forward(self, xs: torch.Tensor) -> torch.Tensor:
         """
@@ -214,7 +227,32 @@ class DiverseVoxNet(pl.LightningModule):
 
         loss, _ = self.train_loss_fn(tex_preds, tex_targs)
 
-        self.log("train_loss", loss, on_step=True)
+        plot_type = "pointcloud"
+
+        if (self.current_epoch + 1) % 50 == 0 or self.current_epoch == 0:
+            im_name = "Epoch_" + str(self.current_epoch) + "_Step_" + str(self.global_step) + '_' + str(plot_type) + ".png"
+            
+            if geom.shape[0] > 1:
+                geom = geom[0]
+            geom = geom.detach().cpu().numpy().squeeze()
+ 
+            if tex_preds.shape[0] > 1:
+                tex_preds = tex_preds[0]
+            tex_preds = tex_preds.detach().cpu().numpy().squeeze()
+
+            tex_targs = tex_targs.detach().cpu().numpy()
+            
+            trans = torchvision.transforms.ToTensor()
+
+            if geom[0].shape[0] == 5:
+                geom = geom[0]
+
+            if tex_preds.shape[0] == 2:
+                tex_preds = numpy.expand_dims(tex_preds, 0)
+
+            img = trans(save_preds(geom[0], tex_preds, im_name, plot_type, True, tex_targs, "diversenet"))
+
+        self.log("train_loss", loss, on_step=False, on_epoch=True)
         #self.log("performance", {"accuracy": acc, "loss": loss})
 
         return loss
@@ -244,20 +282,20 @@ class DiverseVoxNet(pl.LightningModule):
 
         plot_type = "pointcloud"
 
-        if self.current_epoch % 100 == 0:
-            im_name = "Epoch_" + str(self.current_epoch) + "_Step_" + str(self.global_step) + '_' + str(plot_type) + ".png"
+        # if self.current_epoch % 100 == 0:
+        #     im_name = "Epoch_" + str(self.current_epoch) + "_Step_" + str(self.global_step) + '_' + str(plot_type) + ".png"
 
-            # print("Before", geoms.shape, tex_preds.shape)
+        #     # print("Before", geoms.shape, tex_preds.shape)
 
-            if geoms.shape[0] > 1:
-                geoms = geoms[0]
-            geoms = geoms.cpu().numpy().squeeze()
+        #     if geoms.shape[0] > 1:
+        #         geoms = geoms[0]
+        #     geoms = geoms.cpu().numpy().squeeze()
 
-            if tex_preds.shape[0] > 1:
-                tex_preds = tex_preds[0]
+        #     if tex_preds.shape[0] > 1:
+        #         tex_preds = tex_preds[0]
 
-            tex_preds = tex_preds.cpu().numpy().squeeze()
-            tex_targs = tex_targs.cpu().numpy()
+        #     tex_preds = tex_preds.cpu().numpy().squeeze()
+        #     tex_targs = tex_targs.cpu().numpy()
 
             # print("After", geoms.shape, tex_preds.shape)
 
@@ -269,13 +307,13 @@ class DiverseVoxNet(pl.LightningModule):
             # Before torch.Size([1, 5, 64, 64, 64]) torch.Size([1, 10, 2, 64, 64, 64])
             # After (5, 64, 64, 64) (10, 2, 64, 64, 64)
 
-            trans = torchvision.transforms.ToTensor()
+            # trans = torchvision.transforms.ToTensor()
 
-            img = trans(save_preds(geoms[0], tex_preds, im_name, plot_type, True))
+            # img = trans(save_preds(geoms[0], tex_preds, im_name, plot_type, True, "diversenet"))
 
             #self.log(im_name, img)
 
-        self.log("val_loss", loss)
+        self.log("val_loss", loss, on_step=False, on_epoch=True)
         
         return loss
 
@@ -285,11 +323,11 @@ class DiverseVoxNet(pl.LightningModule):
         :return: Configured optimizers 
         """
 
-        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
+        # optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
+        optimizer = torch.optim.SGD(self.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay, momentum=self.momentum)
         #Note: might also try SGD, but research shows fine-tuned adam outperforms 
 
-
-        lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1)
+        lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.lr_step_size, gamma=self.lr_gamma)
 
         return [optimizer], [lr_scheduler]
 

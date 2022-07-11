@@ -199,23 +199,29 @@ def process_voxels(geom, tex, is_pred=False):
         c = np.argmax(tex, axis=0)
         c = c[z, y, x]
     else: 
-        c = tex[0, z, y, x]
-    #tex preds: 30595, 
-    #tex targs: 
+        c = tex[0, z, y, x] 
 
     c = cmap[c]
     xyz = np.vstack((x,y,z)).T
 
     return xyz, c
 
-def save_preds(geom, textures, filename, plot_type="pointcloud", is_pred=False):
+def save_preds(geom, textures, filename, plot_type="pointcloud", is_pred=False, targs=None, model_type=None):
     vs = [(45, 45), (45, 135), (45, 225), (45, 315), (-45, 315), (-45, 225), (-45, 135), (-45, 45)]
 
     im_grid = []
 
-    #add stacking to save_preds
+    #1) add ground truths to grid 
+    if targs is not None:
+        xyz, c = process_voxels(geom, targs[0])
+        row_imgs = plot_3d(xyz, c, plot_type=plot_type, views = vs)
+        row_im_grid = np.concatenate(row_imgs, axis=1)
+        im_grid.append(row_im_grid)
+        print("Saved ground truth")
 
-    #add stacked ground truths to im grid 
+    #2) add stacking to save_preds
+
+    #3) add stacked ground truths to im grid 
 
 
     for idx, tex in enumerate(textures):
@@ -230,11 +236,45 @@ def save_preds(geom, textures, filename, plot_type="pointcloud", is_pred=False):
 
     im = Image.fromarray(im_grid)
 
-    pred_filename = osp.join('data', 'training_images', filename)
+    #add diversenet or cnn3d to front of folder 
+
+    target_folder = osp.join('data', 'training_images')
+
+    dirs = [x for x in os.listdir(target_folder) if osp.isdir(osp.join(target_folder, x))]
+
+    dirs_idxs = [int(x.split('_')[1]) for x in dirs]
+    if len(dirs_idxs) == 0:
+        dirs_idxs.append(-1)
+
+    max_dir_index = max(dirs_idxs)
+
+    print("Max_Dir", max_dir_index)
+
+    epoch = filename.split('_')[1]
+    step = filename.split('_')[3]
+
+    if int(epoch) == 0 and int(step)==0:
+        new_dir = "version_" + str(max_dir_index+1) + "_" + model_type if model_type is not None else "version_" + str(max_dir_index+1)
+        target_folder = osp.join(target_folder, new_dir)
+        os.mkdir(target_folder)
+
+    else:
+        old_dir = "version_" + str(max_dir_index) + "_" + model_type if model_type is not None else "version_" + str(max_dir_index)
+        target_folder = osp.join(target_folder, old_dir)
+
+    #else, work in the folder with the highest index
+    pred_filename = osp.join(target_folder, filename)
+     
     print(pred_filename)
     im.save(pred_filename)
 
     return im
+
+def fast_scandir(dirname):
+    subfolders= [f.path for f in os.scandir(dirname) if f.is_dir()]
+    for dirname in list(subfolders):
+        subfolders.extend(fast_scandir(dirname))
+    return subfolders
 
 
 
@@ -243,12 +283,11 @@ if __name__ == "__main__":
 
     n_ensemble = 1
     N_show = 1
-    dset = voxel_dataset.VoxelDataset(osp.join('data', 'voxelized_meshes'), 'use',
-        is_train=True, random_rotation=0, n_ensemble=n_ensemble)
+    dset = voxel_dataset.VoxelDataset(osp.join('data', 'voxelized_meshes_test'), 'use',
+        is_train=False, random_rotation=0, n_ensemble=n_ensemble)
 
     vs = [(45, 45), (45, 135), (45, 225), (45, 315), (-45, 315), (-45, 225), (-45, 135), (-45, 45)]
-    # vs = [(0, 0), (0, 90), (0, 180), (0, 270), (90, 0), (-90, 0)]
-    # for idx in np.random.choice(len(dset), N_show):
+
     for idx in range(N_show):
         geom, tex = dset[idx]
         xyz, c = process_voxels(geom[0], tex)
@@ -256,4 +295,4 @@ if __name__ == "__main__":
 
         im_grid = np.concatenate(imgs, axis=1)
         im = Image.fromarray(im_grid)
-        im.save("Voxel_Apple.png")
+        im.save("Voxel_Mug.png")

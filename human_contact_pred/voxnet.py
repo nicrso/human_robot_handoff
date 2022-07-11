@@ -16,7 +16,7 @@ import torchvision
 #alter model to handle the format of the dataloader 
 #dataloader items will be np arrays with one item 
 
-class cnn3d(pl.LightningModule):
+class voxnet(pl.LightningModule):
     """
     3D CNN as described in "VoxNet: A 3D Convolutional Neural Network for Real-Time Object
     Recognition" -- Daniel Maturana and Sebastian Scherer
@@ -26,12 +26,6 @@ class cnn3d(pl.LightningModule):
         self, 
         in_channels: int = 5,
         out_channels: int = 2,
-        diverse_beta: int = 1,
-        learning_rate: float = 1e-3,
-        weight_decay: float = 5e-4, 
-        momentum: float = 0.9,
-        lr_gamma: float = 0.1, 
-        lr_step_size: int = 1000, 
     ) -> None:
         """
         3D CNN PyTorch Lightning module. 
@@ -39,13 +33,7 @@ class cnn3d(pl.LightningModule):
         :param out channels: Number of output features (classes)
         """
 
-        self.learning_rate = learning_rate
-        self.weight_decay = weight_decay	
-        self.momentum = momentum
-        self.lr_gamma = lr_gamma
-        self.lr_step_size = lr_step_size
-
-        super(cnn3d, self).__init__()
+        super().__init__()
 
         #initialize losses 
         self.train_loss_fn = DiverseLoss()
@@ -53,69 +41,40 @@ class cnn3d(pl.LightningModule):
 
         nc = in_channels
 
-        self.inc = nn.Sequential(
-            self.conv_block(in_channels, nc*2) 
-        )
-        nc *= 2
-
-        self.inc2 = nn.Sequential(
-            self.conv_block(nc, nc*2) 
-        )
-        nc *= 2
-
         self.down1 = nn.Sequential(
+            self.conv_block(in_channels, nc*4), 
             nn.MaxPool3d(2),
-            self.conv_block(nc, nc*2), 
         )
-        nc *= 2
-
+        nc *= 4
+    	
         self.down2 = nn.Sequential(
+            self.conv_block(nc, nc*4),
             nn.MaxPool3d(2),
-            self.conv_block(nc, nc*2), 
         )
-        nc *= 2
+        nc *= 4
 
         self.down3 = nn.Sequential(
-            nn.MaxPool3d(2),
-            self.conv_block(nc, nc*2), 
+            self.conv_block(nc, nc*4),
+            nn.MaxPool3d(4),
         )
-        nc *= 2
+        nc *= 4
 
-        self.down4 = nn.Sequential(
-            nn.MaxPool3d(2),
-            self.conv_block(nc, nc*2)
+        self.up1 = nn.Sequential(
+            self.conv_block(nc, nc//4),
         )
-        nc *= 2
+        nc = nc // 4
 
-        self.up1 = nn.ConvTranspose3d(nc, nc//2, kernel_size=2, stride=2)
-        self.conv1 = nn.Sequential(
-            self.conv_block(nc, nc//2), 
+        self.up2 = nn.Sequential(
+            self.conv_block(nc, nc//4),
         )
-    
-        nc = nc // 2
+        nc = nc // 4
 
-        self.up2 = nn.ConvTranspose3d(nc, nc//2, kernel_size=2, stride=2)
-        self.conv2 = nn.Sequential(
-            self.conv_block(nc, nc//2), 
+        self.up3 = nn.Sequential(
+            self.conv_block(nc, nc//4),
         )
-        
-        nc = nc // 2
+        nc = nc // 4
 
-        self.up3 = nn.ConvTranspose3d(nc, nc//2, kernel_size=2, stride=2)
-        self.conv3 = nn.Sequential(
-            self.conv_block(nc, nc//2), 
-        )
-        
-        nc = nc // 2
-
-        self.up4 = nn.ConvTranspose3d(nc, nc//2, kernel_size=2, stride=2)
-        self.conv4 = nn.Sequential(
-            self.conv_block(nc, nc//2), 
-        )
-
-        nc = nc // 2
-
-        self.conv5 = nn.Conv3d(nc, out_channels, kernel_size=3, padding=1) 
+        self.up4 = nn.Conv3d(nc, out_channels, kernel_size=3, padding=1)
 
 
     @staticmethod
@@ -150,32 +109,16 @@ class cnn3d(pl.LightningModule):
 
         #Encoding pass
 
-        x0 = self.inc(x)
-        x1 = self.inc2(x0) # B * 10 * 64 * 64 * 64
-        x2 = self.down1(x1) # B * 20 * 32 * 32 * 32
-        x3 = self.down2(x2) # B * 40 * 16 * 16 * 16
-        x4 = self.down3(x3) # B * 80 * 8 * 8 * 8
-        x5 = self.down4(x4) #B * 160 * 4 * 4 * 4
-
-        # #Decoding pass
-
-        x = self.up1(x5) 
-        x = torch.cat([x, x4], dim=1)
-        x = self.conv1(x) #B * 80 * 8 * 8 * 8
-
-        x = self.up2(x)
-        x = torch.cat([x, x3], dim=1)
-        x = self.conv2(x) #B * 40 * 16 * 16 * 16
-
-        x = self.up3(x) 
-        x = torch.cat([x, x2], dim=1) 
-        x = self.conv3(x) #B * 20 * 32 * 32 * 32
-
-        x = self.up4(x) 
-        x = torch.cat([x, x1], dim=1) 
-        x = self.conv4(x) 
-
-        x = self.conv5(x) 
+        x = self.down1(x)
+        x = self.down2(x)
+        x = self.down3(x)
+        
+        #Decoding pass
+        x = x.view(x.shape[0], -1, 4, 4, 4)
+        x = F.interpolate(self.up1(x), scale_factor=4)
+        x = F.interpolate(self.up2(x), scale_factor=2)
+        x = F.interpolate(self.up3(x), scale_factor=2)
+        x = self.up4(x)
 
         return x
 
@@ -197,11 +140,12 @@ class cnn3d(pl.LightningModule):
         tex_preds = torch.unsqueeze(tex_preds, dim=0)
 
         loss, _ = self.train_loss_fn(tex_preds, tex_targs)
-        self.log("train_loss", loss, on_step=False, on_epoch=True)
+        self.log("train_loss", loss)
+
 
         plot_type = "pointcloud"
 
-        if (self.current_epoch+1) % 50 == 0 or self.current_epoch == 0:
+        if self.current_epoch % 50 == 0:
             im_name = "Epoch_" + str(self.current_epoch) + "_Step_" + str(self.global_step) + '_' + str(plot_type) + ".png"
             
             if geom.shape[0] > 1:
@@ -210,19 +154,19 @@ class cnn3d(pl.LightningModule):
  
             if tex_preds.shape[0] > 1:
                 tex_preds = tex_preds[0]
-            tex_preds = tex_preds.detach().cpu().numpy()
+            tex_preds = tex_preds.detach().cpu().numpy().squeeze()
 
             tex_targs = tex_targs.detach().cpu().numpy()
             
             trans = torchvision.transforms.ToTensor()
 
-            tex_preds = tex_preds[0]
+            if geom[0].shape[0] == 5:
+                geom = geom[0]
 
-            if tex_preds.shape[0] != 1:
-                tex_preds = tex_preds[0]
+            if tex_preds.shape[0] == 2:
                 tex_preds = numpy.expand_dims(tex_preds, 0)
 
-            img = trans(save_preds(geom[0], tex_preds, im_name, plot_type, True, tex_targs, "cnn3d"))
+            img = trans(save_preds(geom[0], tex_preds, im_name, plot_type, True, tex_targs, "voxnet"))
 
         return loss
 
@@ -245,7 +189,7 @@ class cnn3d(pl.LightningModule):
 
         loss, _ = self.val_loss_fn(tex_preds, tex_targs)
 
-        self.log("val_loss", loss, on_step=False, on_epoch=True)
+        self.log("val_loss", loss)
 
         # plot_type = "pointcloud"
 
@@ -274,7 +218,7 @@ class cnn3d(pl.LightningModule):
 
         #     #save_preds expects: geom.shape(5, 64, 64, 64), tex_preds.shape(X, 2, 64, 64, 64)
 
-        #     img = trans(save_preds(geom[0], tex_preds, im_name, plot_type, True, tex_targs, "cnn3d"))
+        #     img = trans(save_preds(geom[0], tex_preds, im_name, plot_type, True, tex_targs, "voxnet"))
 
         return loss
 
@@ -284,14 +228,13 @@ class cnn3d(pl.LightningModule):
         :return: Configured optimizers 
         """
 
-        # optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
-        optimizer = torch.optim.SGD(self.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay, momentum=self.momentum)
+        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
         #Note: might also try SGD, but research shows fine-tuned adam outperforms 
 
-        lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.lr_step_size, gamma=self.lr_gamma)
+        lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1)
 
         return [optimizer], [lr_scheduler]
 
 if __name__ == "__main__":
-    model = cnn3d()
+    model = voxnet()
     print(model) 

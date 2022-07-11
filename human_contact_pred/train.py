@@ -1,8 +1,7 @@
-from asyncio.log import logger
-from gc import callbacks
 import os 
 import configparser
 import argparse
+from sklearn.model_selection import learning_curve
 
 import torch 
 from torch import embedding, nn
@@ -53,8 +52,8 @@ def train(
     diverse_beta = section.getfloat('diverse_beta')
     pos_weight = section.getfloat('pos_weight')
     droprate = section.getfloat('droprate')
-    lr_step_size = section.getint('lr_step_size', 10000)
-    lr_gamma = section.getfloat('lr_gamma', 1.0)
+    lr_step_size = section.getint('lr_step_size', 1000)
+    lr_gamma = section.getfloat('lr_gamma', 0.1)
     grid_size = section.getint('grid_size')
     random_rotation = section.getfloat('random_rotation')
 
@@ -71,7 +70,7 @@ def train(
     #Training dataset
     train_dset = VoxelDataset(
         grid_size=grid_size,
-        random_rotation=random_rotation,
+        random_rotation=0, #random_rotation,
         is_train=True,
         **kwargs
     )
@@ -79,6 +78,7 @@ def train(
         train_dset, 
         batch_size=batch_size,
         shuffle=shuffle,
+        pin_memory=True, 
         num_workers=num_workers
     )
 
@@ -94,13 +94,20 @@ def train(
         val_dset, 
         batch_size=batch_size, 
         shuffle=False,
+        pin_memory=True,
         num_workers=num_workers
     )
 
     #Create model
     diverse_voxnet = DiverseVoxNet(
         n_ensemble=n_ensemble,
-        droprate=droprate
+        droprate=droprate,
+        diverse_beta=diverse_beta,
+        learning_rate=base_lr,
+        weight_decay=weight_decay, 
+        momentum=momentum,
+        lr_gamma=lr_gamma,
+        lr_step_size=lr_step_size,
     )
 
     single_voxnet = cnn3d()
@@ -117,10 +124,7 @@ def train(
     #logger = TensorBoardLogger("tb_logs", name="voxnet")
     #trainer = pl.Trainer(devices=1, accelerator="gpu", callbacks=[checkpoint_callback])
     
-    trainer = pl.Trainer(accelerator="gpu", devices=1, log_every_n_steps=1)
-
-    #tune to find learning rate
-    trainer.tune(model=voxnet)
+    trainer = pl.Trainer(accelerator="gpu", devices=1)
 
     if resume:
         trainer.fit(
